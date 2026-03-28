@@ -4,6 +4,10 @@
 
 This project is a continuation of the Epitech "my_radar" project. Its main goal is to push optimization to the absolute limit. While the original base project struggles to manage a massive number of entities, this improved version is fully capable of handling and rendering **100,000 ships at 60 FPS**.
 
+## Demo
+
+https://github.com/user-attachments/assets/c2492b4d-4eed-4944-a368-063be1ff93fd
+
 ## How to run
 
 The project was written in [Zig](https://ziglang.org/) 0.15.2
