@@ -1,7 +1,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const ship_mod = @import("ship.zig");
-const spatial_hash_mod = @import("spatial_hash.zig");
+const uniform_grid_mod = @import("uniform_grid.zig");
 
 const Ship = ship_mod.Ship;
 const ShipList = std.MultiArrayList(Ship);
@@ -44,9 +44,10 @@ fn simdDecrementDelays(delays: []f32, dt: f32) void {
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}).init;
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}).init;
+    // defer _ = gpa.deinit();
+    // const allocator = gpa.allocator();
+    const allocator = std.heap.c_allocator;
 
     var prng: std.Random.DefaultPrng = .init(blk: {
         var seed: u64 = undefined;
@@ -76,8 +77,16 @@ pub fn main() !void {
     const destroyed = try allocator.alloc(bool, N);
     defer allocator.free(destroyed);
 
-    var spatial_hash = spatial_hash_mod.SpatialHash.init(allocator, ship_mod.COLLISION_DIST);
-    defer spatial_hash.deinit();
+    var uniform_grid = try uniform_grid_mod.UniformGrid.init(
+        allocator,
+        ship_mod.COLLISION_DIST,
+        -ship_mod.COLLISION_DIST,
+        -ship_mod.COLLISION_DIST,
+        @as(f32, @floatFromInt(screenWidth)) + ship_mod.COLLISION_DIST,
+        @as(f32, @floatFromInt(screenHeight)) + ship_mod.COLLISION_DIST,
+        N,
+    );
+    defer uniform_grid.deinit();
 
     for (0..N) |_| {
         const dep_x: f32 = @floatFromInt(rand.intRangeAtMost(u32, 0, screenWidth));
@@ -155,17 +164,17 @@ pub fn main() !void {
             }
         }
 
-        // Build spatial hash (all ships active → branchless) 
-        spatial_hash.clear();
+        // Build uniform grid (all ships active -> branchless)
+        uniform_grid.clear();
         {
             const px = ships.items(.pos_x);
             const py = ships.items(.pos_y);
             for (px, py, 0..) |x, y, i| {
-                try spatial_hash.insert(@intCast(i), x, y);
+                uniform_grid.insert(i, x, y);
             }
         }
 
-        // Collision detection (distance² + scratch buffer) 
+        // Collision detection (distance ** 2 + scratch buffer)
         {
             @memset(destroyed[0..ships.len], false);
             const px = ships.items(.pos_x);
@@ -179,18 +188,16 @@ pub fn main() !void {
                 const sz_dy = y - 300.0;
                 if (sz_dx * sz_dx + sz_dy * sz_dy < 40_000.0) continue;
 
-                var iter = spatial_hash.neighbors(x, y);
-                check: while (iter.next()) |indices| {
-                    for (indices) |j| {
-                        if (j <= @as(u32, @intCast(i))) continue;
-                        if (destroyed[j]) continue;
-                        const cdx = x - px[j];
-                        const cdy = y - py[j];
-                        if (cdx * cdx + cdy * cdy < ship_mod.COLLISION_DIST_SQ) {
-                            destroyed[i] = true;
-                            destroyed[j] = true;
-                            break :check; // ship i dead, skip remaining neighbors
-                        }
+                var iter = uniform_grid.neighbors(x, y);
+                check: while (iter.next()) |j| {
+                    if (j <= i) continue;
+                    if (destroyed[j]) continue;
+                    const cdx = x - px[j];
+                    const cdy = y - py[j];
+                    if (cdx * cdx + cdy * cdy < ship_mod.COLLISION_DIST_SQ) {
+                        destroyed[i] = true;
+                        destroyed[j] = true;
+                        break :check; // ship i dead, skip remaining neighbors
                     }
                 }
             }
